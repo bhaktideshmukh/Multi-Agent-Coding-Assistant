@@ -62,3 +62,12 @@ if st.button("Build Project"):
     shutil.make_archive("generated_project", "zip", "workspace")
     with open("generated_project.zip", "rb") as f:
         st.download_button("Download Project (ZIP)", data=f, file_name="generated_project.zip", mime="application/zip")
+
+    # --- ADD THIS NEW SECTION ---
+    st.info("""
+    **🚀 How to run your downloaded project:**
+    1. Download and extract the ZIP file.
+    2. Open the extracted folder in your terminal or IDE (like VS Code).
+    3. **For Web Apps (HTML/JS):** Simply double-click `index.html` to open it in your browser.
+    4. **For Python Apps:** Run `python app.py` or `python main.py` in your terminal.
+    """)
