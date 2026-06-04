@@ -4,10 +4,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from state import AgentState
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+load_dotenv()
 
 # Initialize our LLM (Llama 3 70B is highly capable and fast)
 # Note: It will automatically look for GROQ_API_KEY in your environment later
-llm = ChatGroq(model_name="llama3-70b-8192", temperature=0.2)
+llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.2)
 
 def planner_agent(state: AgentState) -> AgentState:
     print("--- PLANNER AGENT RUNNING ---")
