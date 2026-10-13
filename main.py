@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from graph import app
 
 # Load environment variables (.env file)
-load_dotenv()
+load_dotenv(override=True)
 
 st.set_page_config(page_title="Multi-Agent Coder Buddy", page_icon="🤖")
 
@@ -31,37 +31,41 @@ if st.button("Build Project"):
     initial_state = {"user_request": user_request}
     
     with st.status("Agents at work...", expanded=True) as status:
-        # Stream the output from the graph
-        for output in app.stream(initial_state):
-            for key, value in output.items():
-                if key == "planner":
-                    st.write("✅ **Planner Agent:** Created project plan.")
-                    with st.expander("View Plan"):
-                        st.write(value["plan"])
-                        
-                elif key == "architect":
-                    st.write("✅ **Architect Agent:** Defined file structure.")
-                    with st.expander("View Architecture"):
-                        st.json(value["architecture"])
-                        
-                elif key == "coder":
-                    if "status" in value and value["status"] == "Coding Complete":
-                        st.write("✅ **Coder Agent:** Finished writing all files.")
-                    else:
-                        current_index = value["current_file_index"] - 1
-                        file_name = value["architecture"][current_index]["file_name"]
-                        st.write(f"💻 **Coder Agent:** Wrote `{file_name}`.")
-                        with st.expander(f"View Code: {file_name}"):
-                            st.code(value["architecture"][current_index]["code"])
+        try:
+            # Stream the output from the graph
+            for output in app.stream(initial_state):
+                for key, value in output.items():
+                    if key == "planner":
+                        st.write("✅ **Planner Agent:** Created project plan.")
+                        with st.expander("View Plan"):
+                            st.write(value["plan"])
                             
-        status.update(label="Project generation complete!", state="complete", expanded=False)
-        
-    st.success("Your project is ready in the `workspace` folder!")
-    
-    # Create a ZIP file for easy downloading
-    shutil.make_archive("generated_project", "zip", "workspace")
-    with open("generated_project.zip", "rb") as f:
-        st.download_button("Download Project (ZIP)", data=f, file_name="generated_project.zip", mime="application/zip")
+                    elif key == "architect":
+                        st.write("✅ **Architect Agent:** Defined file structure.")
+                        with st.expander("View Architecture"):
+                            st.json(value["architecture"])
+                            
+                    elif key == "coder":
+                        if "status" in value and value["status"] == "Coding Complete":
+                            st.write("✅ **Coder Agent:** Finished writing all files.")
+                        else:
+                            current_index = value["current_file_index"] - 1
+                            file_name = value["architecture"][current_index]["file_name"]
+                            st.write(f"💻 **Coder Agent:** Wrote `{file_name}`.")
+                            with st.expander(f"View Code: {file_name}"):
+                                st.code(value["architecture"][current_index]["code"])
+                                
+            status.update(label="Project generation complete!", state="complete", expanded=False)
+            st.success("Your project is ready in the `workspace` folder!")
+            
+            # Create a ZIP file for easy downloading
+            shutil.make_archive("generated_project", "zip", "workspace")
+            with open("generated_project.zip", "rb") as f:
+                st.download_button("Download Project (ZIP)", data=f, file_name="generated_project.zip", mime="application/zip")
+        except Exception as e:
+            status.update(label="Generation failed", state="error", expanded=True)
+            st.error(f"⚠️ Error during generation: {e}")
+            st.stop()
 
     # --- ADD THIS NEW SECTION ---
     st.info("""

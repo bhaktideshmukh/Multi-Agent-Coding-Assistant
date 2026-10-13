@@ -1,15 +1,30 @@
 import os
+import time
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from state import AgentState
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
-# Initialize our LLM (Llama 3 70B is highly capable and fast)
-# Note: It will automatically look for GROQ_API_KEY in your environment later
-llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.2)
+# Initialize our LLM with max_tokens=900 to stay strictly under Groq's 1000 OTPM ceiling
+llm = ChatGroq(model_name="qwen/qwen3.8-27b", temperature=0.2, max_tokens=900)
+
+def invoke_with_retry(target, inputs, max_retries=4, delay=5):
+    """Retries LLM calls automatically if Groq rate limits (429) or network hiccups occur."""
+    for attempt in range(max_retries):
+        try:
+            return target.invoke(inputs)
+        except Exception as e:
+            err_msg = str(e).lower()
+            is_transient = any(term in err_msg for term in ["429", "rate_limit", "connection", "connecterror", "timeout", "getaddrinfo", "aborted", "socket"])
+            if is_transient and attempt < max_retries - 1:
+                print(f"Transient issue ({e.__class__.__name__}). Retrying in {delay}s ({attempt+1}/{max_retries})...")
+                time.sleep(delay)
+            else:
+                raise e
+    return target.invoke(inputs)
 
 def planner_agent(state: AgentState) -> AgentState:
     print("--- PLANNER AGENT RUNNING ---")
@@ -17,13 +32,13 @@ def planner_agent(state: AgentState) -> AgentState:
     
     # Define how the AI should behave
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are an expert software project manager. Your job is to take a user's request and create a detailed, step-by-step project plan. Describe the features, the tech stack, and the overall architecture. Do NOT write code."),
+        ("system", "You are an expert software project manager. Take the user's request and create a concise, practical project plan. Focus on a clean, working solution with 3 to 6 essential files. Avoid overengineering with endless config files or excessive micro-modules. Do NOT write code."),
         ("user", "Here is the request: {request}")
     ])
     
     # Connect the prompt to the LLM and run it
     chain = prompt | llm
-    result = chain.invoke({"request": user_request})
+    result = invoke_with_retry(chain, {"request": user_request})
     
     # Return a dictionary that updates the 'plan' field in our state
     return {"plan": result.content}
@@ -32,28 +47,35 @@ def planner_agent(state: AgentState) -> AgentState:
 # Define the strict schema we want the Architect to return
 class FileTask(BaseModel):
     file_name: str = Field(description="The name of the file, including path if necessary (e.g., 'app.py' or 'components/button.py')")
-    description: str = Field(description="Detailed instructions on what code should be written in this file")
+    description: str = Field(description="Brief 1-2 sentence instruction on what code to write in this file")
 
 class Architecture(BaseModel):
-    files: List[FileTask] = Field(description="A list of files to be created for the project")
+    files: List[FileTask] = Field(description="A list of 3 to 6 essential files to be created for the project (maximum 8 files)")
 
 def architect_agent(state: AgentState) -> AgentState:
     print("--- ARCHITECT AGENT RUNNING ---")
     plan = state["plan"]
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are an expert software architect. Based on the provided project plan, determine exactly what files need to be created. For each file, provide the file name and detailed instructions for the coder. Break down the project into a logical file structure."),
-        ("user", "Here is the project plan: {plan}")
+        ("system", "You are an expert software architect. Based on the provided project plan, define the essential files needed to build a functional project.\n"
+                   "- Generate between 3 to 6 core, runnable files (maximum 8 files).\n"
+                   "- Each entry must be an actual code file (never directories or asset folders).\n"
+                   "- Keep each description brief (1 to 2 sentences max).\n"
+                   "- Avoid extraneous linters, configs, or boilerplate files."),
+        ("user", "Here is the project plan:\n{plan}")
     ])
     
     # Force the LLM to return data matching our Architecture schema
     structured_llm = llm.with_structured_output(Architecture)
     chain = prompt | structured_llm
     
-    result = chain.invoke({"plan": plan})
+    result = invoke_with_retry(chain, {"plan": plan})
+    
+    # Filter out any directory names or empty filenames
+    valid_files = [f for f in result.files if f.file_name and not f.file_name.endswith("/") and not f.file_name.endswith("\\")]
     
     # Convert the Pydantic models back into standard dictionaries for our State
-    architecture_list = [{"file_name": f.file_name, "description": f.description, "code": ""} for f in result.files]
+    architecture_list = [{"file_name": f.file_name, "description": f.description, "code": ""} for f in valid_files]
     
     return {"architecture": architecture_list, "current_file_index": 0}
 
@@ -69,6 +91,7 @@ def coder_agent(state: AgentState) -> AgentState:
         
     file_to_code = architecture[current_index]
     print(f"Coding file: {file_to_code['file_name']}")
+    time.sleep(2)  # Pause between files to respect Groq OTPM rate limits
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are an expert senior software engineer. You write highly optimized, clean, and bug-free code. Return ONLY the raw code for the requested file. Do NOT include markdown blocks, explanations, or conversational text. Just the code."),
@@ -76,7 +99,7 @@ def coder_agent(state: AgentState) -> AgentState:
     ])
     
     chain = prompt | llm
-    result = chain.invoke({"file_name": file_to_code["file_name"], "description": file_to_code["description"]})
+    result = invoke_with_retry(chain, {"file_name": file_to_code["file_name"], "description": file_to_code["description"]})
     
     # Strip markdown backticks just in case the LLM still tries to format it as markdown
     code = result.content

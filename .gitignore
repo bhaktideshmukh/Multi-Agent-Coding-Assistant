@@ -1,0 +1,35 @@
+# Environment variables and secrets
+.env
+.env*.local
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Project generation outputs
+workspace/
+generated_project.zip
+*.zip
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Streamlit runtime secrets
+.streamlit/secrets.toml
