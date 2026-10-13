@@ -8,11 +8,11 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-# Initialize our LLM with max_tokens=900 to stay strictly under Groq's 1000 OTPM ceiling
-llm = ChatGroq(model_name="qwen/qwen3.8-27b", temperature=0.2, max_tokens=900)
+# Initialize our LLM with max_tokens=650 to stay comfortably within Groq's 1000 OTPM ceiling
+llm = ChatGroq(model_name="qwen/qwen3.8-27b", temperature=0.2, max_tokens=650)
 
 def invoke_with_retry(target, inputs, max_retries=4, delay=5):
-    """Retries LLM calls automatically if Groq rate limits (429) or network hiccups occur."""
+    """Retries LLM calls automatically with sufficient backoff for Groq's 60-second rolling token window."""
     for attempt in range(max_retries):
         try:
             return target.invoke(inputs)
@@ -20,8 +20,10 @@ def invoke_with_retry(target, inputs, max_retries=4, delay=5):
             err_msg = str(e).lower()
             is_transient = any(term in err_msg for term in ["429", "rate_limit", "connection", "connecterror", "timeout", "getaddrinfo", "aborted", "socket"])
             if is_transient and attempt < max_retries - 1:
-                print(f"Transient issue ({e.__class__.__name__}). Retrying in {delay}s ({attempt+1}/{max_retries})...")
-                time.sleep(delay)
+                # Groq OTPM limit rolls over every 60 seconds. Wait 20s so the window replenishes.
+                wait_time = 20 if ("429" in err_msg or "rate_limit" in err_msg) else delay
+                print(f"Rate limit / transient issue. Pausing {wait_time}s for token replenishment ({attempt+1}/{max_retries})...")
+                time.sleep(wait_time)
             else:
                 raise e
     return target.invoke(inputs)
@@ -91,7 +93,7 @@ def coder_agent(state: AgentState) -> AgentState:
         
     file_to_code = architecture[current_index]
     print(f"Coding file: {file_to_code['file_name']}")
-    time.sleep(2)  # Pause between files to respect Groq OTPM rate limits
+    time.sleep(3)  # Pause between files to respect Groq OTPM rate limits
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are an expert senior software engineer. You write highly optimized, clean, and bug-free code. Return ONLY the raw code for the requested file. Do NOT include markdown blocks, explanations, or conversational text. Just the code."),
