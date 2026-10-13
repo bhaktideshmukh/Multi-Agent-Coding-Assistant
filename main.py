@@ -11,7 +11,6 @@ st.set_page_config(page_title="Multi-Agent Coder Buddy", page_icon="🤖")
 
 st.title("🤖 Multi-Agent Coding Assistant")
 st.markdown("Built with LangGraph & Groq.")
-st.caption("⚡ Groq free tier refreshes tokens every **60 seconds** (1,000 OTPM limit). If multiple requests are made quickly, wait 1 minute for tokens to replenish.")
 
 user_request = st.text_area("What would you like to build?", placeholder="e.g., Build a calculator web app with HTML, CSS, and JS")
 
